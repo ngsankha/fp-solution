@@ -14,12 +14,14 @@
 (define type-proc        #b100)
 (define type-symbol      #b101)
 
-(define imm-shift        (+ 2 result-shift))
+(define imm-count-bits 3)
+(define imm-shift        (+ imm-count-bits result-shift))
 (define imm-type-mask    (sub1 (arithmetic-shift 1 imm-shift)))
-(define imm-type-int     (arithmetic-shift #b00 result-shift))
-(define imm-type-bool    (arithmetic-shift #b01 result-shift))
-(define imm-type-char    (arithmetic-shift #b10 result-shift))
-(define imm-type-empty   (arithmetic-shift #b11 result-shift))
+(define imm-type-int     (arithmetic-shift #b000 result-shift))
+(define imm-type-bool    (arithmetic-shift #b001 result-shift))
+(define imm-type-char    (arithmetic-shift #b010 result-shift))
+(define imm-type-empty   (arithmetic-shift #b011 result-shift))
+(define imm-type-eof     (arithmetic-shift #b100 result-shift))
 (define imm-val-false    imm-type-bool)
 (define imm-val-true
   (bitwise-ior (arithmetic-shift 1 (add1 imm-shift)) imm-type-bool))
@@ -38,13 +40,13 @@
 ;; Expr+ -> Asm
 ;; Compile e as the entry point
 (define (compile e)
-  (let ((le (label-λ (intern-symbols (desugar e)))))
+  (let ((le (label-λ (intern-symbols (deqquote (desugar e #;(stdlib e)))))))
     `(entry
       ,@(compile-tail-e le '())
       ret
       ,@(compile-λ-definitions (λs le))
       err
-      (push rbp)
+      (add rsp 8)
       (call error))))
 
 ;; type Compiler = LExpr CEnv -> Asm
@@ -65,6 +67,7 @@
       [(? symbol? x)            (compile-var x c)]
       [(? string? s)            (compile-string s)]
       [`',x                     (compile-symbol x)]
+      [`(read-char)             (compile-read-char c)]
       [`(gensym)                (compile-gensym)]
       [`(box ,e0)               (compile-box e0 c)]
       [`(unbox ,e0)             (compile-unbox e0 c)]
@@ -90,7 +93,27 @@
       [`(char->integer ,e0)     (compile-char->integer e0 c)]
       [`(integer->char ,e0)     (compile-integer->char e0 c)]
       [`(abs ,e0)               (compile-abs e0 c)]
+      [`(list->string ,e0)      (compile-list->string e0 c)]
       [_                        (compile-tail-forms e c)])))
+
+(define (even i)
+  (if (odd? i)
+      (add1 i)
+      i))
+
+;; CEnv -> Asm
+(define (compile-read-char c)
+  (let ((i (length c)))
+    `((sub rsp ,(* 8 i))
+
+      (push rsp)      
+      ;(and rsp -16)
+      (sub rsp 8)
+      (call read_char)
+      (add rsp 8)
+      (pop rsp)
+      (add rsp ,(* 8 i)))))
+      
 
 ;; LExpr CEnv -> Asm
 ;; Compile a form that has a tail position,
@@ -576,11 +599,8 @@
 
 ;; LExpr LExpr CEnv -> Asm
 (define (compile-eq? e0 e1 c)
-  ;; TODO
-  '()
-  ;; SOLN
   (let ((c0 (compile-e e0 c))
-        (c1 (compile-e e1 c))
+        (c1 (compile-e e1 (cons #f c)))
         (i  (- (add1 (length c))))
         (l0 (gensym)))
     `(,@c0
@@ -612,7 +632,7 @@
       ,@c1
       ,@assert-integer
       ,@(assert-valid-index i)
-      (sar rax 2) ;; hold i * 8
+      (sar rax ,imm-count-bits) ;; hold i * 8
       (add rax 8) ;; skip past length
       (add rax (offset rsp ,(- (add1 (length c)))))
       (mov rax (offset rax 0)))))
@@ -647,9 +667,6 @@
 
 ;; String -> Asm
 (define (compile-symbol s)
-  ;; TODO
-  '()
-  ;; SOLN
   (let ((s (symbol->string s)))
     (let ((c (compile-string-chars (string->list s) 1)))
       `(,@c
@@ -661,9 +678,6 @@
 
 ;; -> Asm
 (define (compile-gensym)
-  ;; TODO
-  '()
-  ;; SOLN
   (compile-symbol 'gensym))
 
 ;; String -> Asm
@@ -839,6 +853,11 @@
       (neg rax)
       (cmovl rax rbx))))
 
+;; LExpr CEnv -> Asm
+(define (compile-list->string e0 c)
+  '()) ;FIXME
+  
+
 ;; Variable CEnv -> Natural
 (define (lookup x cenv)
   (match cenv
@@ -894,25 +913,20 @@
 ;; LExpr -> LExpr
 ;; Intern symbols
 (define (intern-symbols e)
-  ;; TODO
-  e
-  ;; SOLN
   (let ((se (symbol-env e)))
     (let ((e0 (replace-symbols e se)))
       `(let ,(symbol-env->bindings se)
          ,e0))))
 
-;; SOLN
 ;; LExpr -> SEnv
 (define (symbol-env e)
   (map (λ (s) (list s (gensym "symb")))
        (symbols e)))
 
-;; SOLN
+;; SE -> Bindings
 (define (symbol-env->bindings se)
   (map (λ (l) (list (second l) (list 'quote (first l)))) se))
 
-;; SOLN
 ;; LExpr -> (Listof Symbol)
 ;; Unique list of all symbols occuring in program
 (define (symbols e)
@@ -922,7 +936,7 @@
       [(? imm? i)             '()]
       [(? string? s)          '()]
       [`',x                   (list x)]
-      [`(gensym)              '()]
+      [`(,(? prim0?))         '()]
       [`(,(? prim1?) ,e0)     (symbols e0)]
       [`(,(? prim2?) ,e0 ,e1) (append (symbols e0) (symbols e1))]
       [`(if ,e0 ,e1 ,e2)      (append (symbols e0) (symbols e1) (symbols e2))]
@@ -937,7 +951,6 @@
        (append (symbols e) (apply append (map symbols es)))]))
   (remove-duplicates (symbols e)))
 
-;; SOLN
 ;; LExpr SEnv -> LExpr
 ;; Replace symbols according to given symbol environment
 (define (replace-symbols e se)
@@ -946,7 +959,7 @@
     [(? imm? i)               i]
     [(? string? s)            s]
     [`',x                     (second (assq x se))]
-    [`(gensym)                `(gensym)]
+    [`(,(? prim0? p))         `(,p)]
     [`(,(? prim1? p) ,e0)     `(,p ,(replace-symbols e0 se))]
     [`(,(? prim2? p) ,e0 ,e1)
      `(,p ,(replace-symbols e0 se) ,(replace-symbols e1 se))]
@@ -970,6 +983,214 @@
     [`(,e . ,es)
      `(,(replace-symbols e se) . ,(map (λ (e) (replace-symbols e se)) es))]))
 
-;; SOLN
 (define (zip xs ys)
   (map list xs ys))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; De-quoting
+
+(define (self-quoting? e)
+  (or (integer? e)
+      (string? e)
+      (boolean? e)
+      (char? e)))
+
+#|
+;; QExpr -> Expr
+;; Eliminates quote
+(define (dequote e)
+  (match e
+    [(? variable? x)          x]
+    [(? self-quoting?)        e]    
+    [`',(? symbol? x)         `',x]
+    [`',(? self-quoting? x)   x]
+    [`'()                     `'()]
+    [`'(,d1 . ,d2)            `(cons ,(dequote `',d1) ,(dequote `',d2))]
+    [`(gensym)                `(gensym)]
+    [`(,(? prim1? p) ,e0)     `(,p ,(dequote e0))]
+    [`(,(? prim2? p) ,e0 ,e1) `(,p ,(dequote e0) ,(dequote e1))]
+    [`(if ,e0 ,e1 ,e2)        `(if ,(dequote e0) ,(dequote e1) ,(dequote e2))]    
+    [`(apply ,e0 ,e1)         `(apply ,(dequote e0) ,(dequote e1))]
+    [`(let ,bs ,e0)
+     `(let ,(zip (map first bs)
+                 (map (compose dequote second) bs))
+        ,(dequote e0))]
+    [`(letrec ,bs ,e0)
+     `(letrec ,(zip (map first bs)
+                    (map (compose dequote second) bs))
+        ,(dequote e0))]
+    [`(λ ,xs ,e0)     
+     `(λ ,xs ,(dequote e0))]
+    [`(,e . ,es)
+     `(,(dequote e) . ,(map dequote es))]))
+|#
+
+;; QExpr -> Expr
+(define (deqquote e)
+  (match e
+    [(? variable? x)          x]
+    [(? self-quoting?)        e]    
+    [`',(? symbol? x)         `',x]
+    [`',(? self-quoting? x)   x]
+    [`'()                     `'()]
+    [``,x                     (expand-qq x)]
+    [`'(,d1 . ,d2)            `(cons ,(deqquote `',d1) ,(deqquote `',d2))]
+    [`(,(? prim0? p))         `(,p)]
+    [`(,(? prim1? p) ,e0)     `(,p ,(deqquote e0))]
+    [`(,(? prim2? p) ,e0 ,e1) `(,p ,(deqquote e0) ,(deqquote e1))]
+    [`(if ,e0 ,e1 ,e2)        `(if ,(deqquote e0) ,(deqquote e1) ,(deqquote e2))]    
+    [`(apply ,e0 ,e1)         `(apply ,(deqquote e0) ,(deqquote e1))]
+    [`(let ,bs ,e0)
+     `(let ,(zip (map first bs)
+                 (map (compose deqquote second) bs))
+        ,(deqquote e0))]
+    [`(letrec ,bs ,e0)
+     `(letrec ,(zip (map first bs)
+                    (map (compose deqquote second) bs))
+        ,(deqquote e0))]
+    [`(λ ,xs ,e0)     
+     `(λ ,xs ,(deqquote e0))]
+    [`(,e . ,es)
+     `(,(deqquote e) . ,(map deqquote es))]))
+    
+
+(define (expand-qq x) x)
+
+
+;; Expr -> Expr
+;; Implement the standard library functions
+(define (stdlib e)
+  `(letrec ((append
+             (λ ls
+               (if (empty? ls)
+                   '()
+                   (if (empty? (car ls))
+                       (apply append (cdr ls))
+                       (if (empty? (cdr ls))
+                           (car ls)
+                           (cons (car (car ls))
+                                 (append (cdr (car ls))
+                                         (apply append (cdr ls)))))))))
+            (list
+             (λ ls ls))
+
+            (list?
+             (λ (x)
+               (if (empty? x)
+                   #t
+                   (if (cons? x)
+                       (list? (cdr x))
+                       #f))))
+
+            (first
+             (λ (x)
+               (if (list? x)
+                   (car x)
+                   (car '()))))
+
+            (second
+             (λ (x)
+               (if (list? x)
+                   (car (cdr x))
+                   (car '()))))
+            
+            (rest
+             (λ (x)
+               (if (list? x)
+                   (cdr x)
+                   (car '()))))
+
+            (reverse             
+             (λ (x)
+               (letrec ((rev/acc
+                         (λ (x a)
+                           (if (empty? x)
+                               a
+                               (rev/acc (cdr x) (cons (car x) a))))))
+                 (rev/acc x '()))))
+
+            (not
+             (λ (x)
+               (if x #f #t)))
+
+            (compose
+             (λ (f g)
+               (λ (x)
+                 (f (g x)))))
+
+            (map
+             ;; FIXME: generarlize?
+             (λ (f xs)
+               (if (empty? xs)
+                   '()
+                   (cons (f (car xs)) (map f (cdr xs))))))
+
+            (symbol=?
+             (λ (s1 s2)
+               (if (and (symbol? s1)
+                        (symbol? s2))
+                   (eq? s1 s2)
+                   (car '()))))
+
+            (memq
+             (λ (x xs)
+               (if (empty? xs)
+                   #f
+                   (if (eq? x (car xs))
+                       xs
+                       (memq x (cdr xs))))))
+
+            (length
+             (λ (xs)
+               (if (empty? xs)
+                   0
+                   (add1 (length (cdr xs))))))
+
+            #;
+            (remove-duplicates
+             (λ (xs)
+               (if (empty? xs)
+                   '()
+                   (cons (car xs)
+                         (remove (car xs)
+                                 (remove-duplicates (cdr xs)))))))
+
+            #;
+            (remove
+             (λ (x xs)
+               (if (empty? xs)
+                   '()
+                   (if (equal? x (car xs))
+                       (cdr xs)
+                       (cons (car xs) (remove x (cdr xs)))))))
+
+            #;
+            (member
+             (λ (x xs)
+               (if (empty? xs)
+                   #f
+                   (if (equal? (car xs) x)
+                       xs
+                       (member x (cdr xs))))))
+
+            (string=?  ; FIXME
+             (λ (x y) #f))
+
+            (symbol? ; FIXME
+             (λ (x) #f))
+
+            #;
+            (equal? ; loops on circular values
+             (λ (x y)
+               (or (eq? x y)
+                   (cond [(and (string? x) (string? y)) (string=? x y)]
+                         [(and (box? x) (box y))
+                          (equal? (unbox x) (unbox y))]
+                         [(and (cons? x) (cons? y))
+                          (and (equal? (car x) (car y))
+                               (equal? (cdr x) (cdr y)))]
+                         [else #f])))))                        
+     ,e))
+

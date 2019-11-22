@@ -7,6 +7,7 @@
 ;; | Boolean
 ;; | Character
 ;; | String
+;; | '()
 ;; | (Box Value)
 ;; | (Cons Value Value)
 ;; | Function
@@ -24,7 +25,7 @@
 ;; the symbol 'procedure for such value
 ;; Prog -> FAnswer
 (define (interp e)
-  (match (interp-env (desugar e) '())
+  (match (interp-env (desugar e) stdlib)
     [(? procedure?) 'procedure]
     [a a]))
 
@@ -35,7 +36,8 @@
     [(? string? s) (string-copy s)]
     [(? value? v) v]
     [''() '()]
-    [`',(? symbol? x) x]
+    [`',d d]
+    [``,d (interp-qq d r 0)]
     [(list (? prim? p) es ...)
      (let ((as (interp-env* es r)))
        (interp-prim p as))]
@@ -84,7 +86,8 @@
        [(list f vs ...)
         (if (procedure? f)
             (apply f vs)
-            'err)])] 
+            'err)]
+       ['err 'err])]
     [_ 'err]))
 
 ;; (Listof Expr) REnv (Listof Defn) -> (Listof Value) | 'err
@@ -96,24 +99,59 @@
        ['err 'err]
        [v (cons v (interp-env* es r))])]))
 
-;; (Listof (List Expr Expr)) Expr REnv -> Answer
-(define (interp-cond-env cs en r)
-  (match cs
-    ['() (interp-env en r)]
-    [(cons `(,eq ,ea) cs)
-     (match (interp-env eq r)
+;; Expr REnv Natural -> Answer
+(define (interp-qq d r n)
+  ;(println `(interp-qq ,d ,n))
+  (match d
+    [`(,'unquote ,e)
+     (if (zero? n)
+         (interp-env e r)
+         (cons 'unquote (interp-qq-list e r (sub1 n))))]
+    [`(,'unquote-splicing ,e) 'err]
+    [`(,'quasiquote ,d)
+     (cons 'quasiquote (interp-qq-list d r (add1 n)))]
+    [`(,x . ,y)
+     (match (interp-qq-list x r n)
        ['err 'err]
-       [v
-        (if v
-            (interp-env ea r)
-            (interp-cond-env cs en r))])]))
+       [xv (match (interp-qq y r n)
+             ['err 'err]
+             ['() xv]
+             [yv (if (list? xv)
+                     (append xv yv)
+                     'err)])])]
+    [d d]))
+
+;; Expr REnv Natural -> Answer
+(define (interp-qq-list d r n)
+  ;(println `(interp-qq-list ,d ,n))
+  (match d
+    [`(,'unquote ,e)
+     (if (zero? n)
+         (match (interp-env e r)
+           ['err 'err]
+           [v (list v)])
+         (list (cons 'unquote (interp-qq-list e r (sub1 n)))))]
+    [`(,'unquote-splicing ,e)
+     (if (zero? n)
+         (interp-env e r)
+         (list (cons 'unquote-splicing (interp-qq-list e r (sub1 n)))))]
+    [`(,'quasiquote ,d)
+     (list (cons 'quasiquote (interp-qq-list d r (add1 n))))]
+    [`(,x . ,y)
+     (match (interp-qq-list x r n)
+       ['err 'err]
+       [xv (match (interp-qq y r n)
+             ['err 'err]
+             [yv (list (append xv yv))])])]
+    [d (list d)]))
 
 ;; Any -> Boolean
 (define (prim? x)
   (and (symbol? x)
        (memq x '(add1 sub1 zero? abs - char? boolean? integer? integer->char char->integer
                       string? box? empty? cons cons? box unbox car cdr string-length
-                      make-string string-ref = < <= char=? boolean=? + eq? gensym))))
+                      make-string string-ref = < <= char=? boolean=? + eq? gensym symbol?
+                      procedure?))))
 
 ;; Any -> Boolean
 (define (value? x)
@@ -160,7 +198,9 @@
     [(list 'char=? (? char? v0) (? char? v1)) (char=? v0 v1)]
     [(list 'boolean=? (? boolean? v0) (? boolean? v1)) (boolean=? v0 v1)]
     [(list 'eq? v0 v1) (eq? v0 v1)]
-    [(list 'gensym) (gensym)]    
+    [(list 'gensym) (gensym)]
+    [(list 'symbol? v0) (symbol? v0)]
+    [(list 'procedure? v0) (procedure? v0)]      
     [_ 'err]))
 
 ;; REnv Variable -> Answer
@@ -195,3 +235,24 @@
     [('() ys) (list (list r ys))]
     [((cons x xs) (cons y ys))
      (cons (list x y) (zip/remainder xs ys r))]))
+
+(define stdlib
+  `((append ,append)
+    (list ,list)
+    (list? ,list?)
+    (first ,first)
+    (second ,second)
+    (rest ,rest)
+    (reverse ,reverse)
+    (not ,not)
+    (compose ,compose)
+    (map ,map)
+    (symbol=? ,symbol=?)
+    (memq ,memq)
+    (length ,length)
+    (remq* ,remq*)
+    (remove-duplicates ,remove-duplicates)
+    (remove ,remove)
+    (member ,member)
+    (equal? ,equal?)))
+    

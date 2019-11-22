@@ -15,6 +15,7 @@ void print_string(int64_t);
 void print_symbol(int64_t);
 void print_string_char(int64_t);
 void print_codepoint(int64_t);
+int count_char_bytes(unsigned char);
   
 int main(int argc, char** argv) {
   void * heap = malloc(heap_size);
@@ -77,8 +78,11 @@ void print_immediate(int64_t v) {
     break;
   case imm_type_char:
     print_char(v);
-  default:
     break;
+  case imm_type_eof:
+    printf("#<eof>");
+    break;
+  default:
     internal_error();
   }
 }

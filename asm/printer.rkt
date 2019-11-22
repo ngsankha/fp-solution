@@ -13,6 +13,10 @@
                     (symbol->string o) " "
                     (arg->string a1) ", "
                     (arg->string a2) "\n")]
+    [`(,(? opcode1? o) ,a1)
+     (string-append "\t"
+                    (symbol->string o) " "
+                    (arg->string a1) "\n")]
     [`(pop ,r)
      (string-append "\tpop " (reg->string r) "\n")]
     [`(jmp ,l)
@@ -38,6 +42,10 @@
      (string-append "\tpush " (reg->string r) "\n")]
     [l (string-append (label->string l) ":\n")]))
 
+
+(define (opcode1? x)
+  (memq x '(sete)))
+
 (define (opcode2? x)
   (memq x '(mov add sub cmp and cmovl xor or sal sar lea)))
 
@@ -55,7 +63,7 @@
 ;; Any -> Boolean
 (define (reg? x)
   (and (symbol? x)
-       (memq x '(rax rbx rcx rdx rsp rdi rip rbp rsi r8 r9 r10 r11 r12 r13 r14 r15))))
+       (memq x '(rax rbx rcx rdx rsp rdi rip rbp rsi r8 r9 r10 r11 r12 r13 r14 r15 al))))
 
 ;; Reg -> String
 (define (reg->string r)
@@ -77,5 +85,6 @@
      (string-append "\tglobal " (label->string g) "\n"
                     "\tdefault rel\n"
                     "\textern " (label->string 'error) "\n"
+                    "\textern " (label->string 'read_char) "\n"
                     "\tsection .text\n"
                     (asm->string a)))))

@@ -207,3 +207,28 @@
               'err)
 
 (check-equal? (run '(eq? "a" "a")) #f)
+
+
+;; Quasiquote tests
+
+(check-equal? (run '(quasiquote (0 1 2)))
+	      '(0 1 2))
+(check-equal? (run '(quasiquote (0 (unquote (+ 1 2)) 4)))
+	      '(0 3 4))
+(check-equal? (run '(quasiquote (0 (unquote-splicing '(1 2)) 4)))
+	      '(0 1 2 4))
+(check-equal? (run '(quasiquote (0 (unquote-splicing 1) 4)))
+	      'err)
+(check-equal? (run '(quasiquote (0 (unquote-splicing 1))))
+	      '(0 . 1))
+(check-equal? (run '`,1) 1)
+(check-equal? (run '``,1) '`,1)              
+(check-equal? (run '`(1 (+ 1 ,(+ 2 3)) 4))
+              '(1 (+ 1 5) 4))
+(check-equal? (run '`(1 `,(+ 1 ,(+ 2 3)) 4))
+              '(1 `,(+ 1 5) 4))
+(check-equal? (run '``,@1) '`,@1)
+(check-equal? (interp '`(1 ```,,@,,@(cons (+ 1 2) '()) 4))
+              '(1 ```,,@,3 4))
+(check-equal? (interp '`(1 2 `(,(+ 1 2) ,,(- 5 1))))
+              '(1 2 `(,(+ 1 2) ,4)))

@@ -48,7 +48,7 @@
      (and (expr? x)
           (expr? y)
           (expr? z))]
-    [`(gensym) #t]
+    [`(,(? prim0?)) #t]
     [`(,(? prim1?) ,x) (expr? x)]
     [`(,(? prim2?) ,x ,y) (and (expr? x) (expr? y))]
     [(list 'cond `(,xs ,ys) ... `(else ,z))
@@ -110,7 +110,7 @@
     [''() #t]
     [`',x #t]
     [`(if . ,es) (andmap (λ (e) (closed-expr?/env e bvs)) es)]
-    [`(gensym) #t]
+    [`(,(? prim0?)) #t]
     [`(,(? prim1?) ,e) (closed-expr?/env e bvs)]
     [`(,(? prim2?) ,e0 ,e1)
      (and (closed-expr?/env e0 bvs)
@@ -135,14 +135,18 @@
      (and (closed-expr?/env e bvs)
           (andmap (lambda (e) (closed-expr?/env e bvs)) es))]))
 
+(define (prim0? x)
+  (and (symbol? x)
+       (memq x '(gensym read-char))))
+
 ;; Any -> Boolean
 ;; Is x a unary primitive?
 (define (prim1? x)
   (and (symbol? x)
        (memq x '(add1 sub1 abs - integer->char char->integer
-                      car cdr length box? string? cons? empty?
+                      car cdr box? string? cons? empty?
                       box unbox string-length char? integer? boolean? zero?
-                      gensym))))
+                      list->string))))
 
 ;; Any -> Boolean
 ;; Is x a binary primitive?
@@ -171,7 +175,7 @@
 ;; Any -> Boolean
 (define (keyword? x)
   (and (symbol? x)
-       (memq x '(cond else if let letrec apply λ quote gensym))))
+       (memq x '(cond else if let letrec apply λ quote gensym read-char))))
 
 ;; Any -> Boolean
 (define (variable? x)
@@ -227,13 +231,25 @@
     [`(begin ,@(list `(define (,fs . ,xss) ,es) ...) ,e)
      `(letrec ,(map (λ (f xs e) `(,f (λ ,xs ,(desugar e)))) fs xss es)
         ,(desugar e))]
+    
+    [`(and)                   #t]
+    [`(and ,e)                (desugar e)]
+    [`(and ,e ,@es)           `(if ,(desugar e) ,(desugar `(and ,@es)) #f)]
+    [`(or)                    #f]
+    [`(or ,e)                 (desugar e)]
+    [`(or ,e ,@es)            (let ((x (gensym)))
+                                `(let ((,x ,(desugar e)))
+                                   (if ,x
+                                       ,x
+                                       ,(desugar `(or ,@es)))))]
+    
     [(? variable? x)          x]
     [(? imm? i)               i]
     [(? string? s)            s]
     [`',x                     `',x]
-    [`(gensym)                `(gensym)]
     [`(if ,e0 ,e1 ,e2)        `(if ,(desugar e0) ,(desugar e1) ,(desugar e2))]
     [`(- ,e0)                 `(- 0 ,(desugar e0))]
+    [`(,(? prim0? p))         `(,p)]
     [`(,(? prim1? p) ,e0)     `(,p ,(desugar e0))]
     [`(,(? prim2? p) ,e0 ,e1) `(,p ,(desugar e0) ,(desugar e1))]
     [`(cond [else ,e0])       (desugar e0)]
@@ -258,9 +274,9 @@
     [(? imm? i)               i]
     [(? string? s)            s]
     [`',x                     `',x]
-    [`(gensym)                `(gensym)]
     [`(if ,e0 ,e1 ,e2)        `(if ,(label-λ e0) ,(label-λ e1) ,(label-λ e2))]
     [`(apply ,e0 ,e1)         `(apply ,(label-λ e0) ,(label-λ e1))]
+    [`(,(? prim0? p))         `(,p)]
     [`(,(? prim1? p) ,e0)     `(,p ,(label-λ e0))]
     [`(,(? prim2? p) ,e0 ,e1) `(,p ,(label-λ e0) ,(label-λ e1))]
     [`(let ,bs ,e0)
@@ -280,7 +296,7 @@
     [(? imm? i)             '()]
     [(? string? s)          '()]
     [`',x                   '()]
-    [`(gensym)              '()]
+    [`(,(? prim0?))         '()]
     [`(,(? prim1?) ,e0)     (λs e0)]
     [`(,(? prim2?) ,e0 ,e1) (append (λs e0) (λs e1))]
     [`(if ,e0 ,e1 ,e2)      (append (λs e0) (λs e1) (λs e2))]
@@ -298,7 +314,7 @@
       [(? imm? i)             '()]
       [(? string? s)          '()]
       [`',x                   '()]
-      [`(gensym)              '()]
+      [`(,(? prim0?))         '()]
       [`(,(? prim1?) ,e0)     (fvs e0)]
       [`(,(? prim2?) ,e0 ,e1) (append (fvs e0) (fvs e1))]
       [`(if ,e0 ,e1 ,e2)      (append (fvs e0) (fvs e1) (fvs e2))]
@@ -318,7 +334,7 @@
        (append (fvs e) (apply append (map fvs es)))]))
   (remove-duplicates (fvs e)))
 
-(module+ test
+(module+ tes
   (require rackunit)
   (check-equal? (desugar '(begin (define (f x) x) (f 1)))
                 '(letrec ((f (λ (x) x))) (f 1)))

@@ -2,6 +2,64 @@
 #include <inttypes.h>
 #include "types.h"
 
+void internal_error();
+
+int count_char_bytes(unsigned char val) {
+    if (val < 128) {
+        return 1;
+    } else if (val < 224) {
+        return 2;
+    } else if (val < 240) {
+        return 3;
+    } else {
+        return 4;
+    }
+}
+
+/* reads a UTF-8 encoded character (between 1 and 4 bytes) from stdin */
+int64_t read_char() {
+  int c1;
+  int c2;
+  int c3;
+  int c4;
+  c1 = getchar();
+
+  if (c1 == -1)
+    return imm_type_eof;
+  
+  switch (count_char_bytes((unsigned char) c1)) {
+  case 1:
+    return (c1 << imm_shift) + imm_type_char;
+  case 2:
+    c2 = getchar();
+    return imm_type_char +
+      ((((c1 ^ 192) << 6) +
+	(c2 ^ 128))
+       << imm_shift);
+  case 3:
+    c2 = getchar();
+    c3 = getchar();
+    return imm_type_char +
+      ((((c1 ^ 224) << 12) +
+	((c2 ^ 128) << 6) +
+	(c3 ^ 128))
+       << imm_shift);    
+  case 4:
+    c2 = getchar();
+    c3 = getchar();
+    c4 = getchar();
+    return imm_type_char +
+      ((((c1 ^ 240) << 18) +
+	((c2 ^ 128) << 12) +
+	((c3 ^ 128) <<  6) +
+	(c4 ^ 128))
+       << imm_shift);
+  default:
+    internal_error();
+    return -1; // unreachable
+  }
+}
+
 void print_string_char_u(int64_t v) {
   printf("\\u%04X", (int)(v >> imm_shift));
 }

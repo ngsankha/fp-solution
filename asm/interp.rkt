@@ -7,6 +7,12 @@
 ;; Interpret (by assemblying, linking, and exec'ing) x86-64 code
 ;; Assume: starts with entry point run-time expects
 (define (asm-interp a)
+  (asm-interp/input a ""))
+
+;; Asm String -> Integer
+;; Interpret (by assemblying, linking, and exec'ing) x86-64 code
+;; Assume: starts with entry point run-time expects
+(define (asm-interp/input a str)
   (let* ((t.s (make-temporary-file "nasm~a.s"))
          (t.run (path-replace-extension t.s #".run")))
     (with-output-to-file t.s
@@ -15,9 +21,13 @@
         (asm-display a)))
     (system (format "(cd ~a && make -s ~a) 2>&1 >/dev/null" dir t.run))
     (delete-file t.s)
-    (with-input-from-string
-        (with-output-to-string
-          (λ ()
-            (system (path->string t.run))
-            (delete-file t.run)))
-      read)))
+    (match 
+        (process/ports #f
+                       (open-input-string str)
+                       (current-error-port)
+                       (path->string t.run))
+      [(list in out pid err status)
+       (begin
+         (status 'wait)
+         (delete-file t.run)
+         (read in))])))
