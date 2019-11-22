@@ -25,6 +25,10 @@ int main(int argc, char** argv) {
   return 0;
 }
 
+int64_t ten() {
+  return 10 << imm_shift;
+}
+
 void error() {
   printf("err");
   exit(1);

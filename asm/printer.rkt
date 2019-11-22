@@ -86,5 +86,6 @@
                     "\tdefault rel\n"
                     "\textern " (label->string 'error) "\n"
                     "\textern " (label->string 'read_char) "\n"
+                    "\textern " (label->string 'ten) "\n"
                     "\tsection .text\n"
                     (asm->string a)))))

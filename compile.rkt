@@ -105,13 +105,7 @@
 (define (compile-read-char c)
   (let ((i (length c)))
     `((sub rsp ,(* 8 i))
-
-      (push rsp)      
-      ;(and rsp -16)
-      (sub rsp 8)
       (call read_char)
-      (add rsp 8)
-      (pop rsp)
       (add rsp ,(* 8 i)))))
       
 
