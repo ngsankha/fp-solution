@@ -22,6 +22,7 @@
 (define imm-type-char    (arithmetic-shift #b010 result-shift))
 (define imm-type-empty   (arithmetic-shift #b011 result-shift))
 (define imm-type-eof     (arithmetic-shift #b100 result-shift))
+(define imm-type-void    (arithmetic-shift #b101 result-shift))
 (define imm-val-false    imm-type-bool)
 (define imm-val-true
   (bitwise-ior (arithmetic-shift 1 (add1 imm-shift)) imm-type-bool))
@@ -40,13 +41,15 @@
 ;; Expr+ -> Asm
 ;; Compile e as the entry point
 (define (compile e)
-  (let ((le (label-λ (intern-symbols (deqquote (desugar e #;(stdlib e)))))))
+  (let ((le (label-λ (intern-symbols (deqquote (desugar (stdlib e)))))))
     `(entry
       ,@(compile-tail-e le '())
       ret
       ,@(compile-λ-definitions (λs le))
       err
-      (add rsp 8)
+      (mov rbx rsp) ; align stack at 16-byte boundary
+      (and rbx 8)   ; 0 if 16-byte aligned, 8 if 16-byte align
+      (sub rsp rbx)
       (call error))))
 
 ;; type Compiler = LExpr CEnv -> Asm
@@ -63,51 +66,84 @@
 (define (compile-e/k compile-tail-forms)
   (λ (e c)
     (match e
-      [(? imm? i)               (compile-imm i)]
-      [(? symbol? x)            (compile-var x c)]
-      [(? string? s)            (compile-string s)]
-      [`',x                     (compile-symbol x)]
-      [`(read-char)             (compile-read-char c)]
-      [`(gensym)                (compile-gensym)]
-      [`(box ,e0)               (compile-box e0 c)]
-      [`(unbox ,e0)             (compile-unbox e0 c)]
-      [`(cons ,e0 ,e1)          (compile-cons e0 e1 c)]
-      [`(car ,e0)               (compile-car e0 c)]
-      [`(cdr ,e0)               (compile-cdr e0 c)]
-      [`(add1 ,e0)              (compile-add1 e0 c)]
-      [`(sub1 ,e0)              (compile-sub1 e0 c)]
-      [`(zero? ,e0)             (compile-zero? e0 c)]
-      [`(+ ,e0 ,e1)             (compile-+ e0 e1 c)]
-      [`(- ,e0 ,e1)             (compile-- e0 e1 c)]
-      [`(char=? ,e0 ,e1)        (compile-char=? e0 e1 c)]
-      [`(boolean=? ,e0 ,e1)     (compile-boolean=? e0 e1 c)]
-      [`(= ,e0 ,e1)             (compile-= e0 e1 c)]
-      [`(< ,e0 ,e1)             (compile-< e0 e1 c)]
-      [`(<= ,e0 ,e1)            (compile-<= e0 e1 c)]
-      [`(eq? ,e0 ,e1)           (compile-eq? e0 e1 c)]
-      [`(string-length ,e0)     (compile-string-length e0 c)]
-      [`(string-ref ,e0 ,e1)    (compile-string-ref e0 e1 c)]
-      [`(make-string ,e0 ,e1)   (compile-make-string e0 e1 c)]
-      [`(λ ,xs ',l ,e0)         (compile-λ xs l (fvs e) c)]
-      [`(,(? type-pred? p) ,e0) (compile-type-pred p e0 c)]
-      [`(char->integer ,e0)     (compile-char->integer e0 c)]
-      [`(integer->char ,e0)     (compile-integer->char e0 c)]
-      [`(abs ,e0)               (compile-abs e0 c)]
-      [`(list->string ,e0)      (compile-list->string e0 c)]
-      [_                        (compile-tail-forms e c)])))
+      [(? imm? i)                  (compile-imm i)]
+      [(? symbol? x)               (compile-var x c)]
+      [(? string? s)               (compile-string s)]
+      [`',x                        (compile-symbol x)]
+      [`(read-char)                (compile-read-char c)]
+      [`(write-char ,e0)           (compile-write-char e0 c)]
+      [`(void)                     (compile-void c)]
+      [`(gensym)                   (compile-gensym)]
+      [`(symbol->string ,e0)       (compile-symbol->string e0 c)]
+      [`(box ,e0)                  (compile-box e0 c)]
+      [`(unbox ,e0)                (compile-unbox e0 c)]
+      [`(set-box! ,e0 ,e1)         (compile-set-box! e0 e1 c)]
+      [`(cons ,e0 ,e1)             (compile-cons e0 e1 c)]
+      [`(car ,e0)                  (compile-car e0 c)]
+      [`(cdr ,e0)                  (compile-cdr e0 c)]
+      [`(add1 ,e0)                 (compile-add1 e0 c)]
+      [`(sub1 ,e0)                 (compile-sub1 e0 c)]
+      [`(zero? ,e0)                (compile-zero? e0 c)]
+      [`(+ ,e0 ,e1)                (compile-+ e0 e1 c)]
+      [`(- ,e0 ,e1)                (compile-- e0 e1 c)]
+      [`(char=? ,e0 ,e1)           (compile-char=? e0 e1 c)]
+      [`(boolean=? ,e0 ,e1)        (compile-boolean=? e0 e1 c)]
+      [`(= ,e0 ,e1)                (compile-= e0 e1 c)]
+      [`(< ,e0 ,e1)                (compile-< e0 e1 c)]
+      [`(<= ,e0 ,e1)               (compile-<= e0 e1 c)]
+      [`(eq? ,e0 ,e1)              (compile-eq? e0 e1 c)]
+      [`(string-length ,e0)        (compile-string-length e0 c)]
+      [`(string-ref ,e0 ,e1)       (compile-string-ref e0 e1 c)]
+      [`(make-string ,e0 ,e1)      (compile-make-string e0 e1 c)]
+      [`(string=? ,e0 ,e1)         (compile-string=? e0 e1 c)]
+      [`(λ ,xs ',l ,e0)            (compile-λ xs l (fvs e) c)]
+      [`(,(? type-pred? p) ,e0)    (compile-type-pred p e0 c)]
+      [`(char->integer ,e0)        (compile-char->integer e0 c)]
+      [`(integer->char ,e0)        (compile-integer->char e0 c)]
+      [`(abs ,e0)                  (compile-abs e0 c)]
+      [`(list->string ,e0)         (compile-list->string e0 c)]
+      [`(arithmetic-shift ,e0 ,e1) (compile-arithmetic-shift e0 e1 c)]
+      [`(bitwise-ior ,e0 ,e1)      (compile-bitwise-ior e0 e1 c)]
+      [_                           (compile-tail-forms e c)])))
 
-(define (even i)
-  (if (odd? i)
-      (add1 i)
-      i))
+;; CEnv -> Asm
+(define (compile-void c)
+  `((mov rax ,imm-type-void)))
 
 ;; CEnv -> Asm
 (define (compile-read-char c)
   (let ((i (length c)))
-    `((sub rsp ,(* 8 i))
+    `((sub rsp ,(arithmetic-shift i 3))
+      (mov rbx rsp)
+      (and rbx 8)      ; 0 if 16-byte aligned, 8 if 16-byte align
+      (sub rsp rbx)
+      (push rbx)       ; now pushed 8 bytes
+      (push rdi)       ; pushed 16 bytes
       (call read_char)
-      (add rsp ,(* 8 i)))))
-      
+      (pop rdi)
+      (pop rbx)
+      (add rsp rbx)
+      (add rsp ,(arithmetic-shift i 3)))))
+
+;; Expr CEnv -> Asm
+(define (compile-write-char e0 c)
+  (let ((c0 (compile-e e0 c))
+        (i (length c)))
+    `(,@c0
+      ,@assert-char
+      (sub rsp ,(arithmetic-shift i 3))
+      (mov rbx rsp)
+      (and rbx 8)      ; 0 if 16-byte aligned, 8 if 16-byte align
+      (sub rsp rbx)
+      (push rbx)       ; now pushed 8 bytes
+      (push rdi)       ; pushed 16 bytes
+      (mov rdi rax)    ; rdi holds first argument
+      (call write_char)
+      (pop rdi)
+      (pop rbx)
+      (add rsp rbx)
+      (add rsp ,(arithmetic-shift i 3))
+      (mov rax ,imm-type-void))))
 
 ;; LExpr CEnv -> Asm
 ;; Compile a form that has a tail position,
@@ -168,7 +204,7 @@
            ,l1
            ;; r is non-empty, so allocate a list and move closure env up
            (mov rax rsp)
-           (sub rax ,(* 8 (+ 1 (length xs))))
+           (sub rax ,(arithmetic-shift (+ 1 (length xs)) 3))
            ,@(copy-stack-to-list)
            ; update stack to point to list
            (mov (offset rsp ,(- (+ 1 (length xs)))) rdx)
@@ -176,7 +212,7 @@
            ; move closure env arguments up on stack
            (sal r8 3)
            (mov r9 rsp)
-           (sub r9 ,(* 8 (add1 (length xs))))
+           (sub r9 ,(arithmetic-shift (add1 (length xs)) 3))
            (sub r9 r8)
            ,@(move-args* ys 0 (+ 2 (length xs)))
            ,done
@@ -294,7 +330,7 @@
          (mov (offset rdi 1) rax)
          (mov rax rdi)
          (or rax ,type-proc)
-         (add rdi ,(* 8 (+ 2 (length ys))))
+         (add rdi ,(arithmetic-shift (+ 2 (length ys)) 3))
          (mov (offset rsp ,(- (add1 (length c)))) rax)
          ,@cs))]))
 
@@ -327,12 +363,12 @@
 
 ;; LExpr (Listof LExpr) CEnv -> Asm
 (define (compile-call e0 es c)
-  (let ((stack-size (* 8 (length c))))
+  (let ((stack-size (arithmetic-shift (length c) 3)))
     `(,@(compile-call-common e0 es c)
       ;; Non-tail call: adjust rsp and call
       (mov rcx rsp) ; start of stack in rcx
       (sub rcx ,stack-size)
-      (sub rcx ,(* 8 (+ 2 (length es))))
+      (sub rcx ,(arithmetic-shift (+ 2 (length es)) 3))
       ,@(copy-closure-env-to-stack)
       (sub rsp ,stack-size)
       (call (offset rax 0))
@@ -345,7 +381,7 @@
       ;; Tail-call: move args down and jump
       ,@(move-args (length es) i)
       (mov rcx rsp) ; start of stack in rcx
-      (sub rcx ,(* 8 (+ 1 (length es))))
+      (sub rcx ,(arithmetic-shift (+ 1 (length es)) 3))
       ,@(copy-closure-env-to-stack)
       (jmp (offset rax 0)))))
 
@@ -369,7 +405,7 @@
   (let ((c0 (compile-e e0 c))
         (c1 (compile-e e1 (cons #f c)))
         (i (- (add1 (length c))))
-        (stack-size (* 8 (length c))))
+        (stack-size (arithmetic-shift (length c) 3)))
     `(,@c0
       (mov (offset rsp ,i) rax)
 
@@ -501,7 +537,7 @@
     ;; Return a pointer to the closure
     (mov rax rdi)
     (or rax ,type-proc)
-    (add rdi ,(* 8 (+ 2 (length ys))))))
+    (add rdi ,(arithmetic-shift (+ 2 (length ys)) 3))))
 
 ;; (Listof Variable) CEnv Natural -> Asm
 ;; Pointer to beginning of environment in r9
@@ -548,7 +584,9 @@
             string?
             boolean?
             box?
-            cons?)))
+            cons?
+            symbol?
+            eof-object?)))
 
 ;; Imm -> Asm
 (define (compile-imm i)
@@ -659,7 +697,51 @@
       (mov rax rcx)
       (or rax ,type-string))))
 
-;; String -> Asm
+;; LExpr LExpr CEnv -> Asm
+(define (compile-string=? e0 e1 c)
+  (let ((c0 (compile-e e0 c))
+        (c1 (compile-e e1 (cons #f c)))
+        (i (- (add1 (length c))))
+        (rf   (gensym 'retf))
+        (rt   (gensym 'rett))
+        (done (gensym 'done))
+        (loop (gensym 'loop)))
+
+    `(,@c0
+      ,@assert-string
+      (xor rax ,type-string)
+      (mov (offset rsp ,i) rax)
+      ,@c1
+      ,@assert-string
+      (xor rax ,type-string)
+      (mov rbx (offset rsp ,i))
+
+      ;; check lengths are equal
+      (mov rcx (offset rax 0))
+      (cmp rcx (offset rbx 0))
+      (jne ,rf)
+
+      ;; loop through characters and compare each
+      (sar rcx ,imm-shift)
+      ,loop
+      (cmp rcx 0)
+      (je ,rt)
+      (sub rcx 1)
+      (add rax 8)
+      (add rbx 8)
+      (mov r9  (offset rax 0))
+      (mov r10 (offset rbx 0))
+      (cmp r9 r10)
+      (jne ,rf)
+      (jmp ,loop)
+      ,rt
+      (mov rax ,imm-val-true)
+      (jmp ,done)
+      ,rf
+      (mov rax ,imm-val-false)
+      ,done)))
+
+;; Symbol -> Asm
 (define (compile-symbol s)
   (let ((s (symbol->string s)))
     (let ((c (compile-string-chars (string->list s) 1)))
@@ -668,11 +750,19 @@
         (mov (offset rdi 0) rax)
         (mov rax rdi)
         (add rax ,type-symbol)
-        (add rdi ,(* 8 (add1 (string-length s))))))))
+        (add rdi ,(arithmetic-shift (add1 (string-length s)) 3))))))
 
 ;; -> Asm
 (define (compile-gensym)
   (compile-symbol 'gensym))
+
+;; LExpr CEnv -> Asm
+(define (compile-symbol->string e0 c)
+  (let ((c0 (compile-e e0 c)))
+    `(,@c0
+      ,@assert-symbol
+      (xor rax ,type-symbol)
+      (or rax ,type-string))))
 
 ;; String -> Asm
 (define (compile-string s)
@@ -682,7 +772,7 @@
       (mov (offset rdi 0) rax)
       (mov rax rdi)
       (add rax ,type-string)
-      (add rdi ,(* 8 (add1 (string-length s)))))))
+      (add rdi ,(arithmetic-shift (add1 (string-length s)) 3)))))
 
 ;; (Listof Char) Natural -> Asm
 (define (compile-string-chars cs i)
@@ -714,6 +804,20 @@
       ,@assert-box
       (xor rax ,type-box)
       (mov rax (offset rax 0)))))
+
+;; LExpr CEnv -> Asm
+(define (compile-set-box! e0 e1 c)
+  (let ((c0 (compile-e e0 c))
+        (c1 (compile-e e1 (cons #f c)))
+        (i (- (add1 (length c)))))
+    `(,@c0
+      ,@assert-box
+      (xor rax ,type-box)
+      (mov (offset rsp ,i) rax)
+      ,@c1
+      (mov rbx (offset rsp ,i))
+      (mov (offset rbx 0) rax)
+      (mov rax ,imm-type-void))))
 
 ;; LExpr LExpr CEnv -> Asm
 (define (compile-cons e0 e1 c)
@@ -809,7 +913,7 @@
 ;; TypePred -> Integer
 (define (type-pred->mask p)
   (match p
-    [(or 'box? 'cons? 'string? 'procedure?) result-type-mask]
+    [(or 'box? 'cons? 'string? 'procedure? 'symbol?) result-type-mask]
     [_ imm-type-mask]))
 
 ;; TypePred -> Integer
@@ -819,10 +923,12 @@
     ['cons?      type-pair]
     ['string?    type-string]
     ['procedure? type-proc]
+    ['symbol?     type-symbol]
     ['integer?   imm-type-int]
     ['empty?     imm-type-empty]
     ['char?      imm-type-char]
-    ['boolean?   imm-type-bool]))
+    ['boolean?   imm-type-bool]
+    ['eof-object? imm-type-eof]))
 
 ;; LExpr CEnv -> Asm
 (define (compile-char->integer e0 c)
@@ -849,8 +955,92 @@
 
 ;; LExpr CEnv -> Asm
 (define (compile-list->string e0 c)
-  '()) ;FIXME
-  
+  (let ((c0 (compile-e e0 c))
+        (mt (gensym 'mt))
+        (done (gensym 'done))
+        (loop (gensym 'loop))
+        (finish (gensym 'finish)))
+    `(,@c0
+      (cmp rax ,imm-type-empty)
+      (je ,mt)
+
+      ,@assert-pair
+      (xor rax ,type-pair)
+      (mov r10 0)
+      (mov r9 rdi)
+      (add r9 8)
+      (mov rcx rax)
+
+      ,loop
+      (mov rax (offset rcx 0))
+      ,@assert-char
+      (add r10 1)
+      (mov (offset r9 0) rax)
+      (mov rax (offset rcx 1))
+      (cmp rax ,imm-type-empty)
+      (je ,finish)
+      ,@assert-pair
+      (xor rax ,type-pair)
+      (mov rcx rax)
+      (add r9 8)
+      (jmp ,loop)
+
+      ,finish
+      (sal r10 ,imm-shift)
+      (mov (offset rdi 0) r10)
+      (mov rax rdi)
+      (mov rdi r9)
+      (add rdi 8)
+      (or rax ,type-string)
+      (jmp ,done)
+
+      ,mt
+      (mov rax 0)
+      (mov (offset rdi 0) rax)
+      (mov rax rdi)
+      (or rax ,type-string)
+      (add rdi 8)
+      ,done)))
+
+;; LExpr LExpr CEnv -> Asm
+(define (compile-arithmetic-shift e0 e1 c)
+  (let ((c0 (compile-e e0 c))
+        (c1 (compile-e e1 (cons #f c)))
+        (i  (- (add1 (length c))))
+        (neg (gensym 'neg))
+        (done (gensym 'done)))
+    `(,@c0
+      ,@assert-integer
+      (mov (offset rsp ,i) rax)
+      ,@c1
+      ,@assert-integer
+      (mov rcx rax)
+      (sar rcx ,imm-shift)
+      (mov rax (offset rsp ,i))
+      (cmp rcx 0)
+      (jle ,neg)
+      (sal rax cl)
+      (jmp ,done)
+      ,neg
+      (neg rcx)
+      (sar rax ,imm-shift)
+      (sar rax cl)
+      (sal rax ,imm-shift)
+      ,done)))
+
+;; LExpr LExpr CEnv -> Asm
+(define (compile-bitwise-ior e0 e1 c)
+  (let ((c0 (compile-e e0 c))
+        (c1 (compile-e e1 (cons #f c)))
+        (i  (- (add1 (length c)))))
+    `(,@c0
+      ,@assert-integer
+      (mov (offset rsp ,i) rax)
+      ,@c1
+      ,@assert-integer
+      (mov rbx (offset rsp ,i))
+      (or rax rbx))))
+
 
 ;; Variable CEnv -> Natural
 (define (lookup x cenv)
@@ -872,6 +1062,7 @@
 (define assert-box     (assert-type 'box?))
 (define assert-pair    (assert-type 'cons?))
 (define assert-string  (assert-type 'string?))
+(define assert-symbol  (assert-type 'symbol?))
 (define assert-char    (assert-type 'char?))
 (define assert-proc    (assert-type 'procedure?))
 
@@ -997,7 +1188,7 @@
 (define (dequote e)
   (match e
     [(? variable? x)          x]
-    [(? self-quoting?)        e]    
+    [(? self-quoting?)        e]
     [`',(? symbol? x)         `',x]
     [`',(? self-quoting? x)   x]
     [`'()                     `'()]
@@ -1005,7 +1196,7 @@
     [`(gensym)                `(gensym)]
     [`(,(? prim1? p) ,e0)     `(,p ,(dequote e0))]
     [`(,(? prim2? p) ,e0 ,e1) `(,p ,(dequote e0) ,(dequote e1))]
-    [`(if ,e0 ,e1 ,e2)        `(if ,(dequote e0) ,(dequote e1) ,(dequote e2))]    
+    [`(if ,e0 ,e1 ,e2)        `(if ,(dequote e0) ,(dequote e1) ,(dequote e2))]
     [`(apply ,e0 ,e1)         `(apply ,(dequote e0) ,(dequote e1))]
     [`(let ,bs ,e0)
      `(let ,(zip (map first bs)
@@ -1015,7 +1206,7 @@
      `(letrec ,(zip (map first bs)
                     (map (compose dequote second) bs))
         ,(dequote e0))]
-    [`(λ ,xs ,e0)     
+    [`(λ ,xs ,e0)
      `(λ ,xs ,(dequote e0))]
     [`(,e . ,es)
      `(,(dequote e) . ,(map dequote es))]))
@@ -1025,7 +1216,7 @@
 (define (deqquote e)
   (match e
     [(? variable? x)          x]
-    [(? self-quoting?)        e]    
+    [(? self-quoting?)        e]
     [`',(? symbol? x)         `',x]
     [`',(? self-quoting? x)   x]
     [`'()                     `'()]
@@ -1034,7 +1225,7 @@
     [`(,(? prim0? p))         `(,p)]
     [`(,(? prim1? p) ,e0)     `(,p ,(deqquote e0))]
     [`(,(? prim2? p) ,e0 ,e1) `(,p ,(deqquote e0) ,(deqquote e1))]
-    [`(if ,e0 ,e1 ,e2)        `(if ,(deqquote e0) ,(deqquote e1) ,(deqquote e2))]    
+    [`(if ,e0 ,e1 ,e2)        `(if ,(deqquote e0) ,(deqquote e1) ,(deqquote e2))]
     [`(apply ,e0 ,e1)         `(apply ,(deqquote e0) ,(deqquote e1))]
     [`(let ,bs ,e0)
      `(let ,(zip (map first bs)
@@ -1044,11 +1235,11 @@
      `(letrec ,(zip (map first bs)
                     (map (compose deqquote second) bs))
         ,(deqquote e0))]
-    [`(λ ,xs ,e0)     
+    [`(λ ,xs ,e0)
      `(λ ,xs ,(deqquote e0))]
     [`(,e . ,es)
      `(,(deqquote e) . ,(map deqquote es))]))
-    
+
 
 (define (expand-qq x) x)
 
@@ -1089,14 +1280,14 @@
                (if (list? x)
                    (car (cdr x))
                    (car '()))))
-            
+
             (rest
              (λ (x)
                (if (list? x)
                    (cdr x)
                    (car '()))))
 
-            (reverse             
+            (reverse
              (λ (x)
                (letrec ((rev/acc
                          (λ (x a)
@@ -1115,7 +1306,7 @@
                  (f (g x)))))
 
             (map
-             ;; FIXME: generarlize?
+             ;; NOTE: only works for a single list
              (λ (f xs)
                (if (empty? xs)
                    '()
@@ -1142,7 +1333,6 @@
                    0
                    (add1 (length (cdr xs))))))
 
-            #;
             (remove-duplicates
              (λ (xs)
                (if (empty? xs)
@@ -1151,7 +1341,6 @@
                          (remove (car xs)
                                  (remove-duplicates (cdr xs)))))))
 
-            #;
             (remove
              (λ (x xs)
                (if (empty? xs)
@@ -1160,7 +1349,6 @@
                        (cdr xs)
                        (cons (car xs) (remove x (cdr xs)))))))
 
-            #;
             (member
              (λ (x xs)
                (if (empty? xs)
@@ -1169,13 +1357,38 @@
                        xs
                        (member x (cdr xs))))))
 
-            (string=?  ; FIXME
-             (λ (x y) #f))
+            (string->list
+             (λ (s)
+               (letrec ((loop (λ (i)
+                                (if (= i (string-length s))
+                                    '()
+                                    (cons (string-ref s i)
+                                          (loop (add1 i)))))))
+                 (loop 0))))
 
-            (symbol? ; FIXME
-             (λ (x) #f))
+            (string-append
+             (λ (s1 s2)
+               (list->string
+                (append (string->list s1) (string->list s2)))))
 
-            #;
+            (foldr
+             (λ (f b xs)
+               (if (empty? xs)
+                   b
+                   (f (car xs) (foldr f b (cdr xs))))))
+
+            (for-each
+             (λ (f xs)
+               (if (empty? xs)
+                   (void)
+                   (let ((_ (f (car xs))))
+                     (for-each f (cdr xs))))))
+
+            (display ;; only works on strings
+             (λ (s)
+               (for-each (λ (c) (write-char c))
+                         (string->list s))))
+
             (equal? ; loops on circular values
              (λ (x y)
                (or (eq? x y)
@@ -1185,6 +1398,5 @@
                          [(and (cons? x) (cons? y))
                           (and (equal? (car x) (car y))
                                (equal? (cdr x) (cdr y)))]
-                         [else #f])))))                        
+                         [else #f])))))
      ,e))
-

@@ -137,7 +137,7 @@
 
 (define (prim0? x)
   (and (symbol? x)
-       (memq x '(gensym read-char))))
+       (memq x '(gensym read-char void))))
 
 ;; Any -> Boolean
 ;; Is x a unary primitive?
@@ -146,14 +146,15 @@
        (memq x '(add1 sub1 abs - integer->char char->integer
                       car cdr box? string? cons? empty?
                       box unbox string-length char? integer? boolean? zero?
-                      list->string))))
+                      list->string write-char eof-object? symbol? symbol->string))))
 
 ;; Any -> Boolean
 ;; Is x a binary primitive?
 (define (prim2? x)
   (and (symbol? x)
-       (memq x '(+ cons string-ref make-string char=?
-                   = <= < char=? boolean=? - eq?))))
+       (memq x '(+ cons string-ref make-string char=? string=?
+                   = <= < char=? boolean=? - eq? set-box!
+                   arithmetic-shift bitwise-ior))))
 
 ;; Any -> Boolean
 ;; Is x a well-formed list of bindings?
