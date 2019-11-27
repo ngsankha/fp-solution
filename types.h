@@ -14,4 +14,4 @@
 #define imm_type_char  (2 << result_shift)
 #define imm_type_empty (3 << result_shift)
 #define imm_type_eof   (4 << result_shift)
-
+#define imm_type_void  (5 << result_shift)

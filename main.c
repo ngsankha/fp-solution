@@ -20,13 +20,11 @@ int count_char_bytes(unsigned char);
 int main(int argc, char** argv) {
   void * heap = malloc(heap_size);
   int64_t result = entry(heap);
-  print_result(result);
-  printf("\n");
+  if (result != imm_type_void) {
+    print_result(result);
+    printf("\n");
+  }
   return 0;
-}
-
-int64_t ten() {
-  return 10 << imm_shift;
 }
 
 void error() {
@@ -62,7 +60,7 @@ void print_result(int64_t v) {
     print_symbol(v);
     break;
   case type_proc:
-    printf("procedure");
+    printf("#<procedure>");
     break;
   default:
     internal_error();
@@ -85,6 +83,9 @@ void print_immediate(int64_t v) {
     break;
   case imm_type_eof:
     printf("#<eof>");
+    break;
+  case imm_type_void:
+    printf("#<void>");
     break;
   default:
     internal_error();
