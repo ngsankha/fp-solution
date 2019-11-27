@@ -41,7 +41,7 @@
 ;; Expr+ -> Asm
 ;; Compile e as the entry point
 (define (compile e)
-  (let ((le (label-λ (intern-symbols (deqquote (desugar (stdlib e)))))))
+  (let ((le (label-λ (intern-symbols (desugar (stdlib e))))))
     `(entry
       ,@(compile-tail-e le '())
       ret
@@ -1170,79 +1170,6 @@
 
 (define (zip xs ys)
   (map list xs ys))
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; De-quoting
-
-(define (self-quoting? e)
-  (or (integer? e)
-      (string? e)
-      (boolean? e)
-      (char? e)))
-
-#|
-;; QExpr -> Expr
-;; Eliminates quote
-(define (dequote e)
-  (match e
-    [(? variable? x)          x]
-    [(? self-quoting?)        e]
-    [`',(? symbol? x)         `',x]
-    [`',(? self-quoting? x)   x]
-    [`'()                     `'()]
-    [`'(,d1 . ,d2)            `(cons ,(dequote `',d1) ,(dequote `',d2))]
-    [`(gensym)                `(gensym)]
-    [`(,(? prim1? p) ,e0)     `(,p ,(dequote e0))]
-    [`(,(? prim2? p) ,e0 ,e1) `(,p ,(dequote e0) ,(dequote e1))]
-    [`(if ,e0 ,e1 ,e2)        `(if ,(dequote e0) ,(dequote e1) ,(dequote e2))]
-    [`(apply ,e0 ,e1)         `(apply ,(dequote e0) ,(dequote e1))]
-    [`(let ,bs ,e0)
-     `(let ,(zip (map first bs)
-                 (map (compose dequote second) bs))
-        ,(dequote e0))]
-    [`(letrec ,bs ,e0)
-     `(letrec ,(zip (map first bs)
-                    (map (compose dequote second) bs))
-        ,(dequote e0))]
-    [`(λ ,xs ,e0)
-     `(λ ,xs ,(dequote e0))]
-    [`(,e . ,es)
-     `(,(dequote e) . ,(map dequote es))]))
-|#
-
-;; QExpr -> Expr
-(define (deqquote e)
-  (match e
-    [(? variable? x)          x]
-    [(? self-quoting?)        e]
-    [`',(? symbol? x)         `',x]
-    [`',(? self-quoting? x)   x]
-    [`'()                     `'()]
-    [``,x                     (expand-qq x)]
-    [`'(,d1 . ,d2)            `(cons ,(deqquote `',d1) ,(deqquote `',d2))]
-    [`(,(? prim0? p))         `(,p)]
-    [`(,(? prim1? p) ,e0)     `(,p ,(deqquote e0))]
-    [`(,(? prim2? p) ,e0 ,e1) `(,p ,(deqquote e0) ,(deqquote e1))]
-    [`(if ,e0 ,e1 ,e2)        `(if ,(deqquote e0) ,(deqquote e1) ,(deqquote e2))]
-    [`(apply ,e0 ,e1)         `(apply ,(deqquote e0) ,(deqquote e1))]
-    [`(let ,bs ,e0)
-     `(let ,(zip (map first bs)
-                 (map (compose deqquote second) bs))
-        ,(deqquote e0))]
-    [`(letrec ,bs ,e0)
-     `(letrec ,(zip (map first bs)
-                    (map (compose deqquote second) bs))
-        ,(deqquote e0))]
-    [`(λ ,xs ,e0)
-     `(λ ,xs ,(deqquote e0))]
-    [`(,e . ,es)
-     `(,(deqquote e) . ,(map deqquote es))]))
-
-
-(define (expand-qq x) x)
-
 
 ;; Expr -> Expr
 ;; Implement the standard library functions
