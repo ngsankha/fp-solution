@@ -1,5 +1,6 @@
 #lang racket
 (provide (all-defined-out))
+(require "pat.rkt")
 
 ;; Any -> Boolean
 ;; Is x a well-formed program?
@@ -135,6 +136,13 @@
      (and (closed-expr?/env e bvs)
           (andmap (lambda (e) (closed-expr?/env e bvs)) es))]))
 
+;; Any -> Boolean
+(define (prim? x)
+  (or (prim0? x)
+      (prim1? x)
+      (prim2? x)))
+
+;; Any -> Boolean
 (define (prim0? x)
   (and (symbol? x)
        (memq x '(gensym read-char void))))
@@ -232,33 +240,15 @@
     [`(begin ,@(list `(define (,fs . ,xss) ,es) ...) ,e)
      `(letrec ,(map (λ (f xs e) `(,f (λ ,xs ,(desugar e)))) fs xss es)
         ,(desugar e))]
-    
-    [`(and)                   #t]
-    [`(and ,e)                (desugar e)]
-    [`(and ,e ,@es)           `(if ,(desugar e) ,(desugar `(and ,@es)) #f)]
-    [`(or)                    #f]
-    [`(or ,e)                 (desugar e)]
-    [`(or ,e ,@es)            (let ((x (gensym)))
-                                `(let ((,x ,(desugar e)))
-                                   (if ,x
-                                       ,x
-                                       ,(desugar `(or ,@es)))))]
-    
-    [(? variable? x)          x]
-    [(? imm? i)               i]
-    [(? string? s)            s]
-    [`',x                     `',x]
-    [`(if ,e0 ,e1 ,e2)        `(if ,(desugar e0) ,(desugar e1) ,(desugar e2))]
-    [`(- ,e0)                 `(- 0 ,(desugar e0))]
-    [`(,(? prim0? p))         `(,p)]
-    [`(,(? prim1? p) ,e0)     `(,p ,(desugar e0))]
-    [`(,(? prim2? p) ,e0 ,e1) `(,p ,(desugar e0) ,(desugar e1))]
-    [`(cond [else ,e0])       (desugar e0)]
-    [`(apply ,e0 ,e1)         `(apply ,(desugar e0) ,(desugar e1))]
-    [`(cond [,q0 ,e0] . ,r)
-     `(if ,(desugar q0)
-          ,(desugar e0)
-          ,(desugar `(cond . ,r)))]
+    [(? symbol? x)         x]
+    [(? imm? i)            i]
+    [(? string? s)         s]
+    [`',(? symbol? s)      `',s]
+    [`',d                  (quote->expr d)]
+    [`(- ,e)               (desugar `(- 0 ,e))]
+    [`(,(? prim? p) . ,es) `(,p ,@(map desugar es))]
+    [`(if ,e0 ,e1 ,e2)     `(if ,(desugar e0) ,(desugar e1) ,(desugar e2))]
+    [`(apply ,e0 ,e1)      `(apply ,(desugar e0) ,(desugar e1))]
     [`(let ,bs ,e0)
      `(let ,(map (λ (b) (list (first b) (desugar (second b)))) bs)
         ,(desugar e0))]
@@ -266,7 +256,49 @@
      `(letrec ,(map (λ (b) (list (first b) (desugar (second b)))) bs)
         ,(desugar e0))]
     [`(λ ,xs ,e0)          `(λ ,xs ,(desugar e0))]
+    [`(match . ,_)         (desugar (match->cond e+))]
+    [`(cond . ,_)          (desugar (cond->if e+))]
+    [`(and . ,_)           (desugar (and->if e+))]
+    [`(or . ,_)            (desugar (or->if e+))]
     [`(,e . ,es)           `(,(desugar e) ,@(map desugar es))]))
+
+;; S-Expr -> Expr
+;; Produce an expression that evaluates to given s-expression, without
+;; use of quote (except for symbols and empty list)
+(define (quote->expr d)
+  (match d
+    [(? boolean?) d]
+    [(? integer?) d]
+    [(? string?) d]
+    [(? char?) d]
+    [(? symbol?) (list 'quote d)]
+    [(cons x y) (list 'cons (quote->expr x) (quote->expr y))]
+    ['() ''()]))
+
+;; Expr -> Expr
+(define (cond->if c)
+  (match c
+    [`(cond (else ,e)) e]
+    [`(cond (,c ,e) . ,r)
+     `(if ,c ,e (cond ,@r))]))
+
+;; Expr -> Expr
+(define (and->if c)
+  (match c
+    [`(and) #t]
+    [`(and ,e) e]
+    [`(and ,e . ,r)
+     `(if ,e (and ,@r) #f)]))
+
+;; Expr -> Expr
+(define (or->if c)
+  (match c
+    [`(or) #f]
+    [`(or ,e) e]
+    [`(or ,e . ,r)
+     (let ((x (gensym)))
+       `(let ((,x ,e))
+          (if ,x ,x (or ,@r))))]))
 
 ;; Expr -> LExpr
 (define (label-λ e)
@@ -335,7 +367,7 @@
        (append (fvs e) (apply append (map fvs es)))]))
   (remove-duplicates (fvs e)))
 
-(module+ tes
+(module+ test
   (require rackunit)
   (check-equal? (desugar '(begin (define (f x) x) (f 1)))
                 '(letrec ((f (λ (x) x))) (f 1)))
@@ -349,6 +381,13 @@
   (check-equal? (desugar '(λ x x))
                 '(λ x x))
   (check-equal? (desugar ''x) ''x)
+
+  (check-equal? (desugar '(- 5)) '(- 0 5))
+
+  (check-equal? (desugar ''(1)) '(cons 1 '()))
+  (check-equal? (desugar ''(1 . 2)) '(cons 1 2))
+  (check-equal? (desugar ''(x . y)) '(cons 'x 'y))
+  (check-equal? (desugar ''((x) . y)) '(cons (cons 'x '()) 'y))
 
   (define (lset=? ls1 ls2) (set=? (apply set ls1) (apply set ls2)))
   (check lset=? (fvs 'x) '(x))
