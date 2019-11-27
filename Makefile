@@ -23,5 +23,8 @@ char.o: char.c types.h
 %.s: %.rkt
 	racket -t compile-file.rkt -m $< > $@
 
+compiler:
+	raco make compile-file.rkt
+
 clean:
 	rm *.o *.s *.run
