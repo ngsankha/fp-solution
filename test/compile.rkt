@@ -133,12 +133,12 @@
               36)
 
 ;; Hustle examples
-(check-equal? (run ''()) '())
-(check-equal? (run '(cons 1 (cons 2 (cons 3 '())))) '(1 2 3))
-(check-equal? (run '(cons 1 (cons 2 (cons 3 4)))) '(1 2 3 . 4))
+(check-equal? (run ''()) ''())
+(check-equal? (run '(cons 1 (cons 2 (cons 3 '())))) ''(1 2 3))
+(check-equal? (run '(cons 1 (cons 2 (cons 3 4)))) ''(1 2 3 . 4))
 (check-equal? (run '(car (cons 1 2))) 1)
 (check-equal? (run '(cdr (cons 1 2))) 2)
-(check-equal? (run '(box 8)) '#&8)
+(check-equal? (run '(box 8)) ''#&8)
 (check-equal? (run '(unbox (box 8))) 8)
 (check-equal? (run '(unbox (unbox (box (box 8))))) 8)
 
@@ -192,7 +192,7 @@
                              (cons (add1 (car xs))
                                    (map-add1 (cdr xs)))))
                        (map-add1 (cons 1 (cons 2 (cons 3 '()))))))
-               '(2 3 4))
+               ''(2 3 4))
 
 ;; Iniquity+ examples
 (check-equal? (run '(begin (define (f x) x)
@@ -219,20 +219,20 @@
               'err)
 (check-equal? (run '(begin (define (f . x) x)
                            (f 1)))
-              '(1))
+              ''(1))
 (check-equal? (run '(begin (define (f . x) x)
                            (f 1 2 3)))
-              '(1 2 3))
+              ''(1 2 3))
 (check-equal? (run '(begin (define (f x y . z) z)
                            (f 1 2 3)))
-              '(3))
+              ''(3))
 (check-equal? (run '(begin (define (f . z) z)
                            (apply f (cons 1 (cons 2 (cons 3 '()))))))
-              '(1 2 3))
+              ''(1 2 3))
 
 (check-equal? (run '(begin (define (f x y . z) z)
                            (apply f (cons 1 (cons 2 '())))))
-              '())
+              ''())
 (check-equal? (run '(begin (define (f x y . z) z)
                            (apply f (cons 1 '()))))
               'err)
@@ -241,9 +241,9 @@
 ;; Loot+
 
 (check-equal? (run '(let ((z 0)) ((λ x z)))) 0)
-(check-equal? (run '(apply (λ x x) (cons 1 '()))) '(1))
+(check-equal? (run '(apply (λ x x) (cons 1 '()))) ''(1))
 (check-equal? (run '(apply (λ (x) x) (cons 1 '()))) 1)
-(check-equal? (run '(apply (λ x x) '())) '())
+(check-equal? (run '(apply (λ x x) '())) ''())
 (check-equal? (run '(let ((z 0)) (apply (λ (x) z) (cons 1 '())))) 0)
 (check-equal? (run '(let ((z 0)) (apply (λ x z) (cons 1 '())))) 0)
 (check-equal? (run '(let ((z 0)) (apply (λ x z) '()))) 0)
@@ -253,17 +253,17 @@
 
 ;; Quote
 
-(check-equal? (run ''(1 2 3)) '(1 2 3))
-(check-equal? (run ''(1 2 . 3)) '(1 2 . 3))
-(check-equal? (run ''(1 x . 3)) '(1 x . 3))
+(check-equal? (run ''(1 2 3)) ''(1 2 3))
+(check-equal? (run ''(1 2 . 3)) ''(1 2 . 3))
+(check-equal? (run ''(1 x . 3)) ''(1 x . 3))
 (check-equal? (run '(car '(1 . 2))) 1)
 (check-equal? (run '(cdr '(1 . 2))) 2)
-(check-equal? (run ''("a" "b")) '("a" "b"))
+(check-equal? (run ''("a" "b")) ''("a" "b"))
 
 ;; I/O
 
 (check-equal? (run/io '(read-char) "a") "#\\a\n")
-(check-equal? (run/io '(list (read-char) (read-char)) "ab") "(#\\a #\\b)\n")
+(check-equal? (run/io '(list (read-char) (read-char)) "ab") "'(#\\a #\\b)\n")
 (check-equal? (run/io '(write-char #\a) "") "a")
 (check-equal? (run/io '(display "abc") "") "abc")
 (check-equal? (run/io '(void) "") "")
