@@ -748,3 +748,7 @@ void print_string_char(int64_t v) {
     break;
   }
 }
+
+void write_char(int64_t c) {
+  print_codepoint(c);
+}
