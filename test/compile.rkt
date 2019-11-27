@@ -4,6 +4,9 @@
 (define (run e)
   (asm-interp (compile e)))
 
+(define (run/io e s)
+  (asm-interp/io (compile e) s))
+
 ;; Abscond examples
 (check-equal? (run 7) 7)
 (check-equal? (run -8) -8)
@@ -78,7 +81,7 @@
 (check-equal? (run '(let ((x 7)) (let ((x 2)) x))) 2)
 (check-equal? (run '(let ((x 7)) (let ((x (add1 x))) x))) 8)
 (check-equal? (run '(let ((x (add1 #f))) 0)) 'err)
-               
+
 ;; Fraud+ examples
 (check-equal? (run '(let () 7)) 7)
 (check-equal? (run '(let ((x 7) (y 8)) 2)) 2)
@@ -239,7 +242,7 @@
 
 (check-equal? (run '(let ((z 0)) ((λ x z)))) 0)
 (check-equal? (run '(apply (λ x x) (cons 1 '()))) '(1))
-(check-equal? (run '(apply (λ (x) x) (cons 1 '()))) 1)             
+(check-equal? (run '(apply (λ (x) x) (cons 1 '()))) 1)
 (check-equal? (run '(apply (λ x x) '())) '())
 (check-equal? (run '(let ((z 0)) (apply (λ (x) z) (cons 1 '())))) 0)
 (check-equal? (run '(let ((z 0)) (apply (λ x z) (cons 1 '())))) 0)
@@ -247,3 +250,40 @@
 (check-equal? (run '(let ((z 0))
                       (apply (λ xs z) (cons 1 '()))))
               0)
+
+;; Quote
+
+(check-equal? (run ''(1 2 3)) '(1 2 3))
+(check-equal? (run ''(1 2 . 3)) '(1 2 . 3))
+(check-equal? (run ''(1 x . 3)) '(1 x . 3))
+(check-equal? (run '(car '(1 . 2))) 1)
+(check-equal? (run '(cdr '(1 . 2))) 2)
+(check-equal? (run ''("a" "b")) '("a" "b"))
+
+;; I/O
+
+(check-equal? (run/io '(read-char) "a") "#\\a\n")
+(check-equal? (run/io '(list (read-char) (read-char)) "ab") "(#\\a #\\b)\n")
+(check-equal? (run/io '(write-char #\a) "") "a")
+(check-equal? (run/io '(display "abc") "") "abc")
+(check-equal? (run/io '(void) "") "")
+(check-equal? (run/io '(read-char) "") "#<eof>\n")
+(check-equal? (run/io '(eof-object? (read-char)) "") "#t\n")
+(check-equal? (run/io '(eof-object? (read-char)) "a") "#f\n")
+
+;; match
+
+(check-equal? (run '(match 1 [1 #t] [2 #f])) #t)
+(check-equal? (run '(match 2 [1 #t] [2 #f])) #f)
+(check-equal? (run '(match 3 [1 #t] [2 #f])) 'err)
+(check-equal? (run '(match 3 [1 #t] [2 #f] [x x])) 3)
+(check-equal? (run '(match '(1 2 3)
+                      [(list x y z) (+ (+ x y) z)]))
+              6)
+(check-equal? (run '(match '(x 2 3)
+                      [(list 'x y z) (+ y z)]))
+              5)
+(check-equal? (run '(match '(x 2 3)
+                      [(list 'z y z) (+ y z)]
+                      [_ 2]))
+              2)
