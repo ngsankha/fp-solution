@@ -63,7 +63,7 @@
 ;; Any -> Boolean
 (define (reg? x)
   (and (symbol? x)
-       (memq x '(rax rbx rcx rdx rsp rdi rip rbp rsi r8 r9 r10 r11 r12 r13 r14 r15 al))))
+       (memq x '(rax rbx rcx rdx rsp rdi rip rbp rsi r8 r9 r10 r11 r12 r13 r14 r15 al cl))))
 
 ;; Reg -> String
 (define (reg->string r)
@@ -86,6 +86,6 @@
                     "\tdefault rel\n"
                     "\textern " (label->string 'error) "\n"
                     "\textern " (label->string 'read_char) "\n"
-                    "\textern " (label->string 'ten) "\n"
+                    "\textern " (label->string 'write_char) "\n"
                     "\tsection .text\n"
                     (asm->string a)))))
