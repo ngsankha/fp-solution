@@ -4,19 +4,21 @@
 #include "types.h"
 
 // in bytes
-#define heap_size 1000000
+#define heap_size 500000000 // 500 MB
 
 int64_t entry(void *);
 void print_result(int64_t);
+void print_sexpr(int64_t);
 void print_pair(int64_t);
 void print_immediate(int64_t);
+void print_immediate_result(int64_t);
 void print_char(int64_t);
 void print_string(int64_t);
 void print_symbol(int64_t);
 void print_string_char(int64_t);
 void print_codepoint(int64_t);
 int count_char_bytes(unsigned char);
-  
+
 int main(int argc, char** argv) {
   void * heap = malloc(heap_size);
   int64_t result = entry(heap);
@@ -40,11 +42,27 @@ void internal_error() {
 void print_result(int64_t v) {
   switch (result_type_mask & v) {
   case type_imm:
+    print_immediate_result(v);
+    break;
+  case type_box:
+  case type_pair:
+  case type_symbol:
+    printf("'");
+    print_sexpr(v);
+    break;
+  default:
+    print_sexpr(v);
+  }
+}
+
+void print_sexpr(int64_t v) {
+  switch (result_type_mask & v) {
+  case type_imm:
     print_immediate(v);
     break;
   case type_box:
     printf("#&");
-    print_result (*((int64_t *)(v ^ type_box)));
+    print_sexpr (*((int64_t *)(v ^ type_box)));
     break;
   case type_pair:
     printf("(");
@@ -64,6 +82,16 @@ void print_result(int64_t v) {
     break;
   default:
     internal_error();
+  }
+}
+
+void print_immediate_result(int64_t v) {
+  switch (imm_type_mask & v) {
+  case imm_type_empty:
+    printf("'()");
+    break;
+  default:
+    print_immediate(v);
   }
 }
 
@@ -95,7 +123,7 @@ void print_immediate(int64_t v) {
 void print_pair(int64_t v) {
   int64_t car = *((int64_t *)((v + 0) ^ type_pair));
   int64_t cdr = *((int64_t *)((v + 8) ^ type_pair));
-  print_result(car);
+  print_sexpr(car);
   if ((imm_type_mask & cdr) == imm_type_empty) {
     // nothing
   } else if ((result_type_mask & cdr) == type_pair) {
@@ -103,7 +131,7 @@ void print_pair(int64_t v) {
     print_pair(cdr);
   } else {
     printf(" . ");
-    print_result(cdr);
+    print_sexpr(cdr);
   }
 }
 
