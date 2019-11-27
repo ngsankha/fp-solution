@@ -9,7 +9,8 @@
   (with-input-from-file fn
     (λ ()
       (let ((p (read-program)))
-        (unless (and (prog? p) (closed? p))
+        ;; fixme: check closed doesn't work for match, omitted for now
+        (unless (and (prog? p) #;(closed? p)) 
           (error "syntax error"))          
         (asm-display (compile p))))))
 
